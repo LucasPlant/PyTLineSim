@@ -1,1 +1,1 @@
-Basic simulator for transmition line behavior
+Basic simulator for transmission line behavior
