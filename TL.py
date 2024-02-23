@@ -1,19 +1,24 @@
 import time
 from collections import deque
 import numpy as np
+import math
 
 """
 To DO:
-    allow for multiple shifts in 0(1) via allowing the passage of lists
-    optimize code
-    allow for more accurate real values via time dialation ect
+    custom configs via a json
+    implement current
+    reactive loads
+    pausing and stepping
+    switching
+    cascades and fanouts
+    graphing individual points on the tline
+    envelope
+
+    long term
+    simulation using integrals and many discrete components and runge kutta
     allow importing json files for configurations
-
-
-    vision for overall architecture
-    1 file containing the t line and junction deffenitions and system
-    another file that creates a structure and determines how it should be graphed 
-        perhaps pass the system time into system and have it be agnostic to time 
+    gui
+    preload a dataframe to get higher fps
 
 """
 
@@ -25,7 +30,7 @@ class Junction:
     def receive_wave(self, tline_index, value_in):
         pass
 
-    def send_wave(self, tline_index, sim_time):
+    def send_wave(self, tline_index, sim_time_s):
         pass
 
 
@@ -35,19 +40,41 @@ class GeneratorJunction(Junction):
     def __init__(self, Vg, RG, Z0):
         self.voltage_source = Vg #voltage of source
         self.RG = RG #generator resistance
-        self.Z0 = Z0
 
         self.gamma_g = (RG - Z0)/(RG + Z0)
-        self.initial_wave = Vg * Z0 / (Z0 + RG)
+        self.injected_wave = Vg * Z0 / (Z0 + RG)
         self.wave_in = 0
 
     def receive_wave(self, tline_index, value_in):
         self.wave_in = value_in
 
-    def send_wave(self, tline_index, sim_time):
-        return self.wave_in * self.gamma_g + self.initial_wave #make this support lists
+    def send_wave(self, tline_index, sim_time_s):
+        return self.wave_in * self.gamma_g + self.injected_wave #make this support lists
+    
+class FunctionGenerator(Junction):
 
+    def __init__(self, RG, Z0, function):
+        self.RG = RG
+        self.f = function
 
+        self.wave_in = 0
+        self.gamma_g = (RG - Z0) / (Z0 + RG)
+        
+    def receive_wave(self, tline_index, value_in):
+        self.wave_in = value_in
+
+    def send_wave(self, tline_index, sim_time_s):
+        return self.wave_in * self.gamma_g + self.f(sim_time_s)
+
+class SinusoidalGenerator(FunctionGenerator):
+    def function(self, time_s):
+        return self.amplitude * math.sin(time_s * self.frequency * 2 * math.pi + self.phase)
+
+    def __init__(self, RG, Z0, frequency, amplitude, phase):
+        self.frequency = frequency
+        self.amplitude = amplitude
+        self.phase = phase
+        super().__init__(RG, Z0, self.function)
 
 class ResistiveJunction(Junction):
     
@@ -61,7 +88,7 @@ class ResistiveJunction(Junction):
     def receive_wave(self, tline_index, value_in):
         self.wave_in = value_in
 
-    def send_wave(self, tline_index, sim_time):
+    def send_wave(self, tline_index, sim_time_s):
         return self.wave_in * self.gamma_g
 
 
@@ -133,8 +160,8 @@ class System:
             left, right = junctions
             left_junction, left_number = left
             right_junction, right_number = right
-            Tline.shift_in_v_plus(value_in = left_junction.send_wave(tline_index = left_number, sim_time = self.get_sim_time()))
-            Tline.shift_in_v_minus(value_in = right_junction.send_wave(tline_index = right_number, sim_time = self.get_sim_time()))
+            Tline.shift_in_v_plus(value_in = left_junction.send_wave(tline_index = left_number, sim_time_s = self.get_sim_time()))
+            Tline.shift_in_v_minus(value_in = right_junction.send_wave(tline_index = right_number, sim_time_s = self.get_sim_time()))
 
     
     def tick_system_time_dependent(self):
